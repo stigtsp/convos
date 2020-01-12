@@ -2,6 +2,7 @@ Revision history for perl distribution Convos
 
 3.07 Not Released
  - Will try to rotate uploaded JPEG images
+ - Converted to an all WebSocket based API
 
 3.06 2020-01-09T14:08:36+0900
  - Fix link color inside pseudo form elements

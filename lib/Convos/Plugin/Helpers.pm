@@ -7,6 +7,7 @@ use Mojo::JSON qw(false true);
 use Mojo::Util 'url_unescape';
 
 my @LOCAL_ADMIN_REMOTE_ADDR = split /,/, ($ENV{CONVOS_LOCAL_ADMIN_REMOTE_ADDR} || '127.0.0.1,::1');
+my %MESSAGES                = (not_logged_in => 'Need to log in first.');
 
 sub register {
   my ($self, $app, $config) = @_;
@@ -17,9 +18,9 @@ sub register {
   $app->helper('backend.connection_create_p' => \&_backend_connection_create_p);
   $app->helper('l'                           => \&_l);
   $app->helper('linkembedder'                => sub { state $l = LinkEmbedder->new });
+  $app->helper('rpc.reply'                   => \&_rpc_reply);
   $app->helper('settings'                    => \&_settings);
   $app->helper('social'                      => \&_social);
-  $app->helper('unauthorized'                => \&_unauthorized);
   $app->helper('user_has_admin_rights'       => \&_user_has_admin_rights);
 
   $app->linkembedder->ua->insecure(1) if $ENV{LINK_EMBEDDER_ALLOW_INSECURE_SSL};
@@ -88,6 +89,21 @@ sub _l {
   return $lexicon;
 }
 
+sub _rpc_reply {
+  my ($c, $params, $res, @cb) = @_;
+  my %json
+    = ref $res eq 'HASH' ? %$res
+    : !ref $res          ? (errors => [E($MESSAGES{$res} || $res)])
+    :                      $res->TO_JSON;
+
+  $json{$_} = $params->{$_} for qw(id method);
+  $json{status} ||= 400 if $json{errors};
+  $json{status} ||= 200;
+  @cb = (sub { shift->finish(1000) }) if !@cb and $res eq 'not_logged_in';
+
+  return $c->send({json => \%json}, @cb);
+}
+
 sub _settings {
   my $c        = shift;
   my $settings = $c->stash->{'convos.settings'} ||= _setup_settings($c);
@@ -146,10 +162,6 @@ sub _social {
   return $c;
 }
 
-sub _unauthorized {
-  shift->render(json => E(shift || 'Need to log in first.'), status => 401);
-}
-
 sub _user_has_admin_rights {
   my $c              = shift;
   my $x_local_secret = $c->req->headers->header('X-Local-Secret');
@@ -204,12 +216,6 @@ C<%args>:
 
 Used to return a L<Convos::User> object representing the logged in user
 or a user with email C<$email>.
-
-=head2 unauthorized
-
-  $c = $c->unauthorized;
-
-Used to render an OpenAPI response with status code 401.
 
 =head1 METHODS
 

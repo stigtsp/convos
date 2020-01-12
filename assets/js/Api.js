@@ -1,9 +1,9 @@
 /**
- * Api is a class for loading an OpenAPI spec that you can fetch operations from.
+ * Api can send and retrieve information from the WebSocket.
  *
  * @exports Api
  * @class Api
- * @property {String} url An URL to the OpenAPI specification.
+ * @property {String} url An URL to a WebSocket endpoint.
  * @see Operation
  */
 
@@ -28,66 +28,9 @@ export default class Api {
    * @param {Object} defaultParams An Object holding default "Operation" parameters. (optional)
    * @returns An Operation object.
    */
-  operation(operationId, defaultParams) {
-    const op = new Operation({api: this, id: operationId, defaultParams});
+  operation(name, defaultParams) {
+    const op = new Operation({api: this, name, defaultParams});
     op.req.headers = {'Content-Type': 'application/json'};
     return op;
-  }
-
-  /**
-   * spec() will return the specification for a given operation Id or the whole
-   * spec, if no operation is specified.
-   *
-   * @example
-   * const apiSpec = await api.spec();
-   * const getUserOpSpec = await api.spec('getUser');
-   *
-   * @memberof Api
-   * @param {String} operationId An operation ID in the spec.
-   * @returns {Object} Either the complete API spec or the spec for a single operation.
-   */
-  async spec(operationId) {
-    if (this._ops && operationId) return this._ops[operationId];
-    if (this._spec) return this._spec;
-
-    const res = await fetch(this.url);
-    const spec = await res.json();
-    this._ops = {};
-    this._spec = spec;
-
-    Object.keys(spec.paths).forEach(path => {
-      Object.keys(spec.paths[path]).forEach(method => {
-        const op = spec.paths[path][method];
-        const operationId = op.operationId;
-        if (!operationId) return;
-
-        op.method = method.toUpperCase();
-        op.url = this.protocol + '//' + spec.host + spec.basePath + path + '.json';
-        op.parameters = (op.parameters || []).map(p => this._resolveRef(p));
-
-        this._ops[operationId] = op;
-      });
-    });
-
-    if (this._ops && operationId) return this._ops[operationId];
-    if (this._spec) return this._spec;
-  }
-
-  _resolveRef(p) {
-    let res = p;
-
-    if (p['$ref']) {
-      const refPath = p['$ref'].replace(/^#\//, '').split('/');
-      res = this._spec;
-      while (refPath.length) res = res[refPath.shift()];
-    }
-
-    if (typeof res == 'object') {
-      Object.keys(res).forEach(k => {
-        res[k] = this._resolveRef(res[k]);
-      });
-    }
-
-    return res;
   }
 }

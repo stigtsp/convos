@@ -4,6 +4,7 @@ use Mojo::Base 'Mojolicious::Controller';
 use Convos::Util qw(DEBUG E);
 use Mojo::JSON 'encode_json';
 use Mojo::Util;
+use Scalar::Util qw(blessed weaken);
 use Time::HiRes 'time';
 
 use constant INACTIVE_TIMEOUT => $ENV{CONVOS_INACTIVE_TIMEOUT} || 60;
@@ -12,8 +13,7 @@ sub start {
   my $self = shift->inactivity_timeout(INACTIVE_TIMEOUT);
 
   return $self->_err('Need to log in first.', {})->finish unless my $user = $self->backend->user;
-
-  Scalar::Util::weaken($self);
+  weaken $self;
 
   my $uid     = $user->id;
   my $backend = $self->app->core->backend;
@@ -36,10 +36,10 @@ sub start {
   $self->on(
     json => sub {
       my ($self, $data) = @_;
-      my $method = sprintf '_event_%s', $data->{method} || 'ping';
-      $data->{id} //= Mojo::Util::steady_time();
+      my $method = $data->{method} || 'ping';
       warn "[Convos::Controller::Events] <<< @{[Mojo::JSON::encode_json($data)]}\n" if DEBUG == 2;
-      $self->can($method) ? $self->$method($data) : $self->_err('Invalid method.', $data);
+      my $p = $self->rpc->$method($data);
+      $p->catch(sub { $c->rpc->reply($data, "$_[0]") }) if blessed $p and $p->can('then');
     }
   );
 }

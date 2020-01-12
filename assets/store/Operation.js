@@ -1,22 +1,20 @@
 /**
- * Operation is a class for fetching data from an OpenAPI powered server.
+ * Operation represents a message that is sent/received over a WebSocket.
  *
  * @exports Operation
  * @class Operation
  * @extends Reactive
  * @property {Api} api An {@link Api} object.
- * @property {Array} err A list of errors, if any.
- * @property {Null} err If no errors.
  * @property {Object} defaultParams An Object holding default "Operation" parameters. (optional)
- * @property {Object} req The requested data.
- * @property {Object} res The response from the OpenAPI server.
+ * @property {Object} req The requested data sent to the WebSocket.
+ * @property {Object} res The response from the WebSocket.
  * @property {String} id The name of the operation ID.
  * @property {String} status Either "error", "loading", "pending" or "success".
  * @see Api
  */
 
 import Reactive from '../js/Reactive';
-import {regexpEscape} from '../js/util';
+import {q, regexpEscape} from '../js/util';
 
 export default class Operation extends Reactive {
   constructor(params) {
@@ -24,42 +22,26 @@ export default class Operation extends Reactive {
 
     this.prop('ro', 'api', params.api);
     this.prop('ro', 'defaultParams', params.defaultParams || {});
-    this.prop('ro', 'id', params.id);
-    this.prop('ro', 'req', {body: null, headers: {}});
-    this.prop('ro', 'res', {body: {}, headers: {}});
-    this.prop('rw', 'err', null);
+    this.prop('ro', 'name', params.name || params.id);
+    this.prop('ro', 'req', {});
+    this.prop('ro', 'res', {});
     this.prop('rw', 'status', 'pending');
   }
 
   /**
-   * error() can be used to get or set the "err" property.
+   * error() can be used to get the first error.
    *
-   * @example
-   * op = op.err('Some error');
-   * const err = op.err(); // "Some error"
-   *
-   * op = op.err([{message: 'Complex stuff', path: '/foo'}]);
-   * const err = op.err(); // "foo: Complex stuff"
-   *
-   * @memberof Operation
-   * @param {Array} err A list of error objects.
-   * @param {String} err A descriptive error string.
-   * @param {String} source A name of where the error occured.
    * @returns {String} A descriptive error string.
    */
-  error(err, source) {
-    // Set error
-    if (err) return this.update({err: Array.isArray(err) ? err : [{message: err, source: source}], status: 'error'});
-
-    // Get error
-    if (!this.err || !this.err.length) return '';
-    const first = this.err[0];
-    const path = first.path && first.path.match(/\w$/) && first.path.split('/').pop();
-    return path ? path + ': ' + first.message : first.message;
+  error() {
+    const err = this.res && this.res.errors && this.res.errors[0];
+    if (!err) return '';
+    const path = err.path && err.path.match(/\w$/) && err.path.split('/').pop();
+    return path ? path + ': ' + err.message : err.message;
   }
 
   /**
-   * perform() is used to send/receive data with the OpenAPI server.
+   * perform() is used to send/receive data over a WebSocket.
    *
    * @example
    * await op.perform({email: 'jhthorsen@cpan.org'});
@@ -71,25 +53,12 @@ export default class Operation extends Reactive {
    * @returns {Promise} The promise will be resolved on error and success.
    */
   perform(params) {
-    // this._promise is used as a locking mechanism so you can only call perform() once
-    return this._promise || (this._promise = new Promise(resolve => {
-      this.api.spec(this.id).then(opSpec => {
-        if (!opSpec) return resolve(this.error('Invalid operationId "' + this.id + '".', 'spec'));
-        this.update({status: 'loading'});
-        const [url, req] = this._paramsToRequest(opSpec, params || this.defaultParams);
-        this.emit('start', req);
-        if (typeof req.body == 'object' && typeof req.body.has != 'function') req.body = JSON.stringify(req.body);
-        return fetch(url, req);
-      }).then(res => {
-        return Promise.all([res, res.json()]);
-      }).then(([res, json]) => {
-        delete this._promise;
-        resolve(this.parse(res, json));
-      }).catch(err => {
-        delete this._promise;
-        resolve(this.error('Failed fetching operationId "' + this.id + '": ' + err, 'fetch'));
-      });
-    }));
+    if (this._promise) return this._promise; // this._promise is used as a locking mechanism so you can only call perform() once
+    this.update({status: 'loading'});
+    const req = this._paramsToRequest(params || this.defaultParams);
+    this.emit('start', req);
+    if (typeof req == 'object' && typeof req.has != 'function') req = JSON.stringify(req);
+    return (this._promise = this.api.send(req).then(res => this._parse(res)));
   }
 
   /**
@@ -104,105 +73,29 @@ export default class Operation extends Reactive {
   }
 
   /**
-   * Used to parse a response body
-   *
-   * @param {Response} res
-   * @param {Object} body
-   */
-  parse(res, body = res.body) {
-    this.res.body = body || res;
-    this.res.status = res.status || '201';
-    if (res.headers) this.res.headers = res.headers;
-
-    let err = null;
-    if (!String(this.res.status).match(/^[23]/)) {
-      err = body && body.errors ? body.errors : [{message: res.statusText || 'Unknown error.'}];
-    }
-
-    return this.update({err, status: err ? 'error' : 'success'});
-  }
-
-  /**
    * reset() can be used to clear the response with any data previously fetched.
    *
    * @memberof Operation
    */
   reset() {
-    this.res.body = {};
-    this.res.headers = {};
-    this.res.status = 0;
-    return this.update({err: null, status: 'pending'});
+    return this.update({res: {status: 0}, status: 'pending'});
   }
 
-  _extractValue(params, p) {
-    if (p.schema && (params.tagName || '').toLowerCase() == 'form') {
-      const body = {};
-      return Object.keys(p.schema.properties).reduce((body, k) => {
-        const inputEl = params[k];
-        if (!inputEl) return body; // No such form element
-        if (inputEl.type == 'checkbox' && !inputEl.checked) return body;
-        body[k] = inputEl.value;
-        return body;
-      }, {});
+  _paramsToRequest(params) {
+    if ((params.tagName || '').toLowerCase() == 'form') {
+      params = q(params, 'input').reduce((map, el) => {
+        if (el.name) map[el.name] = el.value;
+        return map;
+      });
     }
-    else if (params[p.name] && params[p.name].tagName) {
-      return params[p.name].value;
-    }
-    else if (p.schema) {
-      const body = {};
-      Object.keys(p.schema.properties).forEach(k => { body[k] = params[k] });
-      return body;
-    }
-    else {
-      return params[p.name];
-    }
+
+    params.method = this.name;
+    return params;
   }
 
-  _hasProperty(params, p) {
-    if (p.in == 'body') {
-      return true;
-    }
-    else if (p.in == 'formData') {
-      return params.formData.has(p.name);
-    }
-    else if ((params.tagName || '').toLowerCase() == 'form') {
-      return params[p.name] ? true : false;
-    }
-    else {
-      return params.hasOwnProperty(p.name);
-    }
-  }
-
-  _paramsToRequest(opSpec, params) {
-    const fetchParams = {headers: this.req.headers, method: opSpec.method};
-    const url = new URL(opSpec.url);
-
-    (opSpec.parameters || []).forEach(p => {
-      if (!this._hasProperty(params, p) && !p.required) {
-        return;
-      }
-      else if (p.in == 'path') {
-        const re = new RegExp('(%7B|\\{)' + regexpEscape(p.name) + '(%7D|\\})', 'i');
-        url.pathname = url.pathname.replace(re, encodeURIComponent(this._extractValue(params, p)));
-      }
-      else if (p.in == 'query') {
-        url.searchParams.set(p.name, this._extractValue(params, p));
-      }
-      else if (p.in == 'formData') {
-        delete fetchParams.headers['Content-Type']; // Set by fetch()
-        fetchParams.body = params.formData;
-      }
-      else if (p.in == 'body') {
-        fetchParams.body = this._extractValue(params, p);
-      }
-      else if (p.in == 'header') {
-        fetchParams.header[p.name] = this._extractValue(params, p.name);
-      }
-      else {
-        throw '[Api] Parameter in:' + p.in + ' is not supported.';
-      }
-    });
-
-    return [url, fetchParams];
+  _parse(res) {
+    this.res = res || {};
+    delete this._promise;
+    return this.update({res, status: res.errors ? 'error' : 'success'});
   }
 }

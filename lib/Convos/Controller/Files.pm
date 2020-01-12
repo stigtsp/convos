@@ -6,9 +6,6 @@ use Convos::Util 'E';
 sub get {
   my $self = shift;
 
-  # Make sure we don't get 501 Not implemented if this is an API request
-  $self->stash(handler => 'ep', openapi => 'Should never be rendered.');
-
   return $self->files->serve({
     fid    => $self->stash('fid'),
     format => $self->stash('format') || '',
@@ -19,8 +16,6 @@ sub get {
 sub upload {
   my $self = shift;
 
-  # TODO: Move this to Mojolicious::Plugin::OpenAPI
-  # Handle "Maximum message size exceeded"
   my $error = $self->req->error;
   $self->render(openapi => E($error->{message}, '/file'), status => 400) if $error;
 

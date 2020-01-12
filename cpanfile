@@ -7,7 +7,6 @@ requires "IRC::Utils"                     => "0.12";
 requires "JSON::Validator"                => "3.16";
 requires "LinkEmbedder"                   => "1.11";
 requires "Mojolicious"                    => "8.25";
-requires "Mojolicious::Plugin::OpenAPI"   => "2.18";
 requires "Mojolicious::Plugin::Webpack"   => "0.12";
 requires "Parse::IRC"                     => "1.20";
 requires "Time::Piece"                    => "1.20";

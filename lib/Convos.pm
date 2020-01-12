@@ -30,9 +30,6 @@ sub startup {
   $self->sessions->default_expiration(86400 * 7);
   push @{$self->renderer->classes}, __PACKAGE__;
 
-  # Autogenerate routes from the OpenAPI specification
-  $self->plugin(OpenAPI => {url => $self->static->file('convos-api.json')->path});
-
   # Add basic routes
   my $r = $self->routes;
   $r->get('/')->to(load_user => 1, template => 'index')->name('index');
@@ -57,17 +54,7 @@ sub startup {
 
   $self->_plugins;
 
-  # Process svelte assets using rollup.js
-  $ENV{MOJO_WEBPACK_CONFIG} = 'rollup.config.js';
-  $self->plugin(
-    Webpack => {
-      process      => ['svelte'],
-      dependencies => {core => 'rollup', svelte => [qw(rollup-plugin-svelte svelte)]}
-    }
-  );
-
   $self->hook(after_build_tx  => \&_after_build_tx);
-  $self->hook(around_action   => \&_around_action);
   $self->hook(before_dispatch => \&_before_dispatch);
   $self->core->start;
 }
@@ -75,34 +62,6 @@ sub startup {
 sub _after_build_tx {
   my ($tx, $app) = @_;
   $tx->req->max_message_size($ENV{CONVOS_MAX_UPLOAD_SIZE} // 40_000_000);
-}
-
-sub _around_action {
-  my ($next, $c, $action, $last) = @_;
-  my $wantarray = wantarray;
-  my @args      = $wantarray ? $c->$next : (scalar $c->$next);
-
-  if (Scalar::Util::blessed($args[0]) && $args[0]->can('then')) {
-    my $tx = $c->tx;
-    my $p  = Mojo::Promise->resolve($args[0]);
-    $c->render_later if $last;
-    $p->then(
-      $last || sub { $c->continue if $_[0] },
-      sub {
-        if ($c->openapi->spec) {
-          $c->log->error($_[0]);
-          $c->render(openapi => {errors => [{message => $_[0], path => '/'}]}, status => 500);
-        }
-        else {
-          $c->reply->exception($_[0]);
-        }
-        undef $tx;
-      },
-    )->wait;
-    return unless $last;
-  }
-
-  return $wantarray ? @args : $args[0];
 }
 
 sub _before_dispatch {
@@ -184,8 +143,20 @@ sub _plugins {
   my $self = shift;
   unshift @{$self->plugins->namespaces}, 'Convos::Plugin';
 
-  my @plugins = qw(Convos::Plugin::Auth Convos::Plugin::Files Convos::Plugin::Helpers);
-  push @plugins, split /,/, $ENV{CONVOS_PLUGINS} if $ENV{CONVOS_PLUGINS};
+  # Core plugins
+  $self->plugin($_) for qw(Helpers Auth Files User);
+
+  # Process svelte assets using rollup.js
+  $ENV{MOJO_WEBPACK_CONFIG} = 'rollup.config.js';
+  $self->plugin(
+    Webpack => {
+      process      => ['svelte'],
+      dependencies => {core => 'rollup', svelte => [qw(rollup-plugin-svelte svelte)]}
+    }
+  );
+
+  # User overriden plugins
+  my @plugins = split /,/, $ENV{CONVOS_PLUGINS} if $ENV{CONVOS_PLUGINS};
   for (@plugins) {
     my ($name, $config) = split '\?', $_, 2;
     $self->plugin($name => Mojo::Parameters->new($config // '')->to_hash);
