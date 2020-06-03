@@ -1,5 +1,6 @@
 <script>
 import Button from '../components/form/Button.svelte';
+import Icon from '../components/Icon.svelte';
 import Link from '../components/Link.svelte';
 import OperationStatus from '../components/OperationStatus.svelte';
 import Scrollspy from '../js/Scrollspy';
@@ -54,53 +55,39 @@ async function redirectAfterLogin(op) {
 }
 </script>
 
-<main id="top" class="welcome-screen" bind:this="{mainEl}">
-  <article class="welcome-screen__about">
-    <h1>
-      <Link href="/"><span>{l('Convos')}</span></Link>
-      {#if process.env.organization_name != 'Convos'}
-        {#if process.env.organization_url != 'https://convos.chat'}
-          <small class="subtitle">{@html lmd('for [%1](%2)', process.env.organization_name, process.env.organization_url)}</small>
-        {:else}
-          <small class="subtitle">{l('for %1', process.env.organization_name)}</small>
-        {/if}
-      {/if}
-    </h1>
+<main id="top" bind:this="{mainEl}">
+  <div class="hero-wrapper">
+    <header class="hero">
+      <div class="hero--text">
+        <h1>
+          <img src="{route.urlFor('/images/convos-light.png')}" alt="Convos">
+          <small class="tagline">&mdash; A better chat experience</small>
+          <small>Convos is the simplest way to use IRC and it is always online.</small>
+        </h1>
+        <p class="hero-cta">
+          <a class="btn" on:click="{scrollspy.scrollTo}" href="#signup"><Icon name="user-plus"/> {l('Sign up')}</a>
+          <a class="btn" on:click="{scrollspy.scrollTo}" href="#signin"><Icon name="sign-in-alt"/> {l('Sign in')}</a>
+        </p>
+        <nav>
+          <a href="https://convos.chat">About</a>
+          <a href="https://convos.chat/blog">Blog</a>
+          <a href="https://github.com/nordaaker/convos/"><Icon family="brand" name="github"/></a>
+          <a href="https://twitter.com/convosby/"><Icon family="brand" name="twitter"/></a>
+        </nav>
+      </div>
+      <a href="#instant-demo" class="hero--media">
+        <img src="{route.urlFor('/screenshots/2020-05-28-convos-chat.jpg')}" alt="Picture of Convos conversation">
+      </a>
+    </header>
+  </div>
 
-    <p>{l('Convos is the simplest way to use IRC, and it keeps you always online.')}</p>
-  </article>
-
-  {#if !$user.isFirst}
-    <section id="signin" class="welcome-screen__signin fade-in">
-      <form method="post" on:submit|preventDefault="{e => loginOp.perform(e.target)}">
-        <h2>{l('Sign in')}</h2>
-        <TextField type="email" name="email" placeholder="{l('Ex: john@doe.com')}" bind:value="{user.formEmail}">
-          <span slot="label">{l('E-mail')}</span>
-        </TextField>
-
-        <TextField type="password" name="password" autocomplete="current-password">
-          <span slot="label">{l('Password')}</span>
-        </TextField>
-
-        <div class="form-actions">
-          <Button icon="sign-in-alt" op="{loginOp}"><span>{l('Sign in')}</span></Button>
-          <a class="btn is-hallow" on:click="{scrollspy.scrollTo}" href="#signup">{l('Sign up')}</a>
-        </div>
-
-        <OperationStatus op="{loginOp}"/>
-      </form>
-    </section>
-  {/if}
-
-  <section id="signup" class="welcome-screen__signup fade-in">
+  <section id="signup" class="has-max-width">
     {#if process.env.status >= 400}
       <h2>{l('Invalid invite/recover URL')}</h2>
       <p>{l(process.env.status == 410 ? 'The link has expired.' : 'The link is invalid.')}</p>
       <p>{l('Please ask your Convos admin for a new link.')}</p>
       <p>
         <a class="btn" href="{process.env.contact}">{l('Contact admin')}</a>
-        <a class="btn is-hallow" on:click="{scrollspy.scrollTo}" href="#signin">{l('Sign in')}</a>
-        <a class="btn is-hallow" on:click="{scrollspy.scrollTo}" href="#top">{l('Home')}</a>
       </p>
     {:else if emailFromParams || process.env.open_to_public || $user.isFirst}
       <form method="post" on:submit|preventDefault="{e => registerOp.perform(e.target)}" bind:this="{formEl}">
@@ -143,19 +130,43 @@ async function redirectAfterLogin(op) {
       <p on:click="{scrollspy.scrollTo}">{l('Please ask your Convos admin for an invite link to sign up, or sign in if you already have an account.')}</p>
       <div class="form-actions">
         <a class="btn" href="{process.env.contact}">{l('Contact admin')}</a>
-        <a class="btn is-hallow" on:click="{scrollspy.scrollTo}" href="#signin">{l('Sign in')}</a>
-        <a class="btn is-hallow" on:click="{scrollspy.scrollTo}" href="#top">{l('Home')}</a>
       </div>
     {/if}
   </section>
 
-  <footer class="welcome-screen__footer fade-in">
-    <Link href="https://convos.chat/" target="_blank">Convos</Link>
-    &mdash;
-    <Link href="https://convos.chat/blog" target="_blank">{l('Blog')}</Link>
-    &mdash;
-    <Link href="https://convos.chat/doc" target="_blank">{l('Documentation')}</Link>
-    &mdash;
-    <Link href="https://github.com/Nordaaker/convos" target="_blank">{l('GitHub')}</Link>
-  </footer>
+  {#if !$user.isFirst}
+    <section id="signin" class="has-max-width">
+      <form method="post" on:submit|preventDefault="{e => loginOp.perform(e.target)}">
+        <h2>{l('Sign in')}</h2>
+        <TextField type="email" name="email" placeholder="{l('Ex: john@doe.com')}" bind:value="{user.formEmail}">
+          <span slot="label">{l('E-mail')}</span>
+        </TextField>
+
+        <TextField type="password" name="password" autocomplete="current-password">
+          <span slot="label">{l('Password')}</span>
+        </TextField>
+
+        <div class="form-actions">
+          <Button icon="sign-in-alt" op="{loginOp}"><span>{l('Sign in')}</span></Button>
+        </div>
+
+        <OperationStatus op="{loginOp}"/>
+      </form>
+    </section>
+  {/if}
 </main>
+
+<div class="footer-wrapper">
+  <footer class="has-max-width">
+    <p>
+      Copyright (C) 2012-2020, <a href="https://github.com/nordaaker">Nordaaker</a>.
+    </p>
+    <p>
+      This program is free software, you can redistribute it and/or modify it under
+      the terms of the Artistic License version 2.0.
+    </p>
+    <p>
+      <img src="{route.urlFor('/images/convos-light.png')}" alt="" style="height:2.2rem;margin-top:1rem">
+    </p>
+  </footer>
+</div>
